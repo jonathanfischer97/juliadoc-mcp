@@ -24,13 +24,13 @@ Gets Julia source code for a function, type, or method.
 ## Requirements
 
 - Node.js 16 or higher
-- Julia installed and accessible in PATH
+- Julia 1.9 or higher installed and accessible in PATH
 - Claude Desktop
 
 ## Installation
 
 ```bash
-npm install -g @modelcontextprotocol/server-juliadoc
+npm install -g @jonathanfischer97/server-juliadoc
 ```
 
 ## Configuration
@@ -42,21 +42,56 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
   "mcpServers": {
     "juliadoc": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-juliadoc"]
+      "args": ["-y", "@jonathanfischer97/server-juliadoc"]
     }
   }
 }
 ```
 
+If you have a custom Julia installation or configuration, you can specify the paths:
+
+```json
+{
+  "mcpServers": {
+    "juliadoc": {
+      "command": "npx",
+      "args": ["-y", "@jonathanfischer97/server-juliadoc"],
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/path/to/your/julia/bin",
+        "JULIA_DEPOT_PATH": "/path/to/your/.julia"
+      }
+    }
+  }
+}
+```
+
+The server will:
+1. Use the system's default Julia installation if no PATH is specified
+2. Use the default Julia package depot (~/.julia) if no JULIA_DEPOT_PATH is specified
+
 ## Development
 
 ```bash
+# Clone the repository
+git clone https://github.com/jonathanfischer97/juliadoc-mcp.git
+cd juliadoc-mcp
+
 # Install dependencies
 npm install
 
 # Build
 npm run build
 
-# Start server
+# Start server locally
 npm start
 ```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+MIT License - see LICENSE file for details
+
+
