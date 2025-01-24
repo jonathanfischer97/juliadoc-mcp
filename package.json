@@ -1,15 +1,19 @@
 {
-  "name": "@modelcontextprotocol/server-juliadoc",
+  "name": "@jonathanfischer97/server-juliadoc",
   "version": "1.0.0",
+  "description": "MCP server for Julia documentation and source code access",
   "type": "module",
   "bin": {
     "juliadoc-mcp": "./build/index.js"
   },
   "scripts": {
     "build": "tsc",
-    "start": "node build/index.js"
+    "start": "node build/index.js",
+    "prepare": "npm run build"
   },
-  "files": ["build"],
+  "files": [
+    "build/**/*"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.4.0",
     "zod": "^3.24.1"
@@ -17,5 +21,14 @@
   "devDependencies": {
     "@types/node": "^22.10.10",
     "typescript": "^5.7.3"
+  },
+  "author": "Jonathan Fischer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jonathanfischer97/juliadoc-mcp"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   }
 }
