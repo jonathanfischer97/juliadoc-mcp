@@ -4,6 +4,11 @@ An MCP server that provides access to Julia documentation and source code throug
 
 <a href="https://glama.ai/mcp/servers/7xy80o4wdp"><img width="380" height="200" src="https://glama.ai/mcp/servers/7xy80o4wdp/badge" alt="Julia Documentation Server MCP server" /></a>
 
+![](https://badge.mcpx.dev?type=server 'MCP Server') 
+
+- `![](https://badge.mcpx.dev?type=server 'MCP Server')` 
+- `<img src="https://badge.mcpx.dev?type=server" title="MCP Server"/>`
+
 ## Features
 
 - Get documentation for Julia packages, modules, types, functions, and methods
