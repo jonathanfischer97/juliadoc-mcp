@@ -2,6 +2,8 @@
 
 An MCP server that provides access to Julia documentation and source code through Claude Desktop.
 
+<a href="https://glama.ai/mcp/servers/7xy80o4wdp"><img width="380" height="200" src="https://glama.ai/mcp/servers/7xy80o4wdp/badge" alt="Julia Documentation Server MCP server" /></a>
+
 ## Features
 
 - Get documentation for Julia packages, modules, types, functions, and methods
