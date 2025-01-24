@@ -29,6 +29,6 @@
     "url": "https://github.com/jonathanfischer97/juliadoc-mcp"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   }
 }
