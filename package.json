@@ -1,0 +1,21 @@
+{
+  "name": "@modelcontextprotocol/server-juliadoc",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "juliadoc-mcp": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js"
+  },
+  "files": ["build"],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.4.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "typescript": "^5.7.3"
+  }
+}
