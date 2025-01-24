@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node build/index.js",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test": "echo \"No tests specified - skipping tests\""
   },
   "files": [
     "build/**/*"
