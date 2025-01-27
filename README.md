@@ -28,12 +28,6 @@ Gets Julia source code for a function, type, or method.
 - Julia 1.9 or higher installed and accessible in PATH
 - Claude Desktop
 
-## Installation
-
-```bash
-npm install -g @jonathanfischer97/server-juliadoc
-```
-
 ## Configuration
 
 Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/claude_desktop_config.json`):
