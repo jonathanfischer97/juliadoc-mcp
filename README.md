@@ -14,11 +14,11 @@ An MCP server that provides access to Julia documentation and source code throug
 
 ## Tools
 
-### get-doc
+### `get-doc`
 Gets Julia documentation for a package, module, type, function, or method.
 - Parameter: `path` (string) - Path to Julia object (e.g., 'Base.sort', 'AbstractArray')
 
-### get-source
+### `get-source`
 Gets Julia source code for a function, type, or method.
 - Parameter: `path` (string) - Path to Julia object (e.g., 'Base.sort', 'AbstractArray')
 
@@ -43,26 +43,7 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 }
 ```
 
-If you have a custom Julia installation or configuration, you can specify the paths:
-
-```json
-{
-  "mcpServers": {
-    "juliadoc": {
-      "command": "npx",
-      "args": ["-y", "@jonathanfischer97/server-juliadoc"],
-      "env": {
-        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/path/to/your/julia/bin",
-        "JULIA_DEPOT_PATH": "/path/to/your/.julia"
-      }
-    }
-  }
-}
-```
-
-The server will:
-1. Use the system's default Julia installation if no PATH is specified
-2. Use the default Julia package depot (~/.julia) if no JULIA_DEPOT_PATH is specified
+The server will use your system's default Julia installation and package depot. Make sure Julia is installed and accessible from your `PATH`.
 
 ## Development
 
@@ -84,6 +65,8 @@ npm start
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+Credit goes to [mrjoshuak/godoc-mcp](https://github.com/mrjoshuak/godoc-mcp) for inspiring this project
 
 ## License
 
