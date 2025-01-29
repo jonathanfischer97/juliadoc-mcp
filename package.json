@@ -1,6 +1,6 @@
 {
   "name": "@jonathanfischer97/server-juliadoc",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MCP server for Julia documentation and source code access",
   "type": "module",
   "bin": {
