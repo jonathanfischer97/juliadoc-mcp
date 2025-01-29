@@ -1,25 +1,49 @@
 #!/usr/bin/env node
 
+// Add immediate logging before any imports or class definitions
+console.error('Process environment at startup:', {
+  argv: process.argv,
+  env: process.env,
+  cwd: process.cwd()
+});
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { existsSync } from 'fs';
+import { homedir } from 'os';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
+// Get the equivalent of __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Convert exec to use promises instead of callbacks
 const execAsync = promisify(exec);
 
-// Simple cache implementation
+// Read version from package.json
+const packageJson = JSON.parse(
+  readFileSync(join(__dirname, '../package.json'), 'utf8')
+);
+
+// Cache implementation to store results and reduce Julia process spawns
 class Cache<T> {
   private cache = new Map<string, { value: T; timestamp: number }>();
   private ttl: number;
 
-  constructor(ttlSeconds: number = 300) {
-    this.ttl = ttlSeconds * 1000;
+  constructor(ttlSeconds: number = 300) { // Default 5 minute TTL
+    this.ttl = ttlSeconds * 1000; // Convert to milliseconds
   }
 
   get(key: string): T | undefined {
     const item = this.cache.get(key);
     if (!item) return undefined;
+    // Check if cache entry has expired
     if (Date.now() - item.timestamp > this.ttl) {
       this.cache.delete(key);
       return undefined;
@@ -35,49 +59,147 @@ class Cache<T> {
 class JuliaDocServer {
   private server: McpServer;
   private cache: Cache<string>;
+  private juliaPath: string;
+  private projectPath: string | null;
 
   constructor() {
     this.server = new McpServer({
       name: "juliadoc",
-      version: "1.0.0",
+      version: packageJson.version,
     });
 
-    this.cache = new Cache<string>(300); // 5 minute cache
-
-    // Register tools
+    this.cache = new Cache<string>(300);
+    this.juliaPath = this.findJuliaPath();
+    
+    // Log all environment variables for debugging
+    console.error('Environment variables:', {
+      JULIA_PROJECT: process.env.JULIA_PROJECT,
+      JULIA_DEPOT_PATH: process.env.JULIA_DEPOT_PATH,
+      JULIA_LOAD_PATH: process.env.JULIA_LOAD_PATH,
+      PATH: process.env.PATH
+    });
+    
+    // Store project path from environment
+    this.projectPath = process.env.JULIA_PROJECT || null;
+    console.error('Using Julia project path:', this.projectPath);
+    
+    this.verifyJuliaInstallation();
     this.setupTools();
   }
 
-  private async runJuliaCommand(code: string): Promise<string> {
+  private findJuliaPath(): string {
+    // First check if explicitly set via env var
+    if (process.env.JULIA_PATH) {
+      return process.env.JULIA_PATH;
+    }
+
+    const home = homedir();
+    const commonPaths = [
+      // Juliaup installation (most common)
+      `${home}/.juliaup/bin/julia`,
+      // Homebrew installation
+      '/opt/homebrew/bin/julia',
+      // Manual installation
+      '/Applications/Julia-1.9.app/Contents/Resources/julia/bin/julia',
+      // System-wide installation
+      '/usr/local/bin/julia'
+    ];
+
+    // Check common installation paths
+    for (const path of commonPaths) {
+      if (existsSync(path)) {
+        console.error(`Found Julia at: ${path}`);
+        return path;
+      }
+    }
+
+    // Fall back to PATH-based julia
+    console.error('Falling back to Julia from system PATH');
+    return 'julia';
+  }
+
+  private async verifyJuliaInstallation(): Promise<void> {
     try {
-      // Escape the Julia code for shell execution
-      const escapedCode = code.replace(/"/g, '\\"');
-      const command = `julia -e "${escapedCode}"`;
-      console.error(`Executing Julia command: ${command}`);
+      const { stdout } = await execAsync(`${this.juliaPath} --version`);
+      console.error(`Found Julia: ${stdout.trim()}`);
+    } catch (error) {
+      console.error('Failed to find Julia installation:', error);
+      throw new Error(
+        'Julia not found. Please ensure Julia is installed and either:\n' +
+        '1. Add Julia to your PATH, or\n' +
+        '2. Set JULIA_PATH environment variable to point to your Julia executable'
+      );
+    }
+  }
+
+  private async runJuliaCommand(code: string, packageName?: string): Promise<string> {
+    try {
+      let fullCode = '';
       
-      // Print Julia version and environment info for debugging
-      const { stdout: juliaInfo } = await execAsync('julia -e "println(\\"Julia Version: \\", VERSION); println(\\"DEPOT_PATH: \\", DEPOT_PATH)"');
-      console.error("Julia environment info:", juliaInfo);
+      // Add package loading if specified
+      if (packageName) {
+        fullCode += `using ${packageName}; `;
+      }
+
+      // Add the main code
+      fullCode += code;
       
-      const { stdout, stderr } = await execAsync(command);
+      // Properly escape the code for the -e flag
+      // Replace single quotes with '\'' for shell escaping
+      const escapedCode = fullCode.replace(/'/g, "'\\''");
+      
+      // Properly quote the project path if specified
+      const projectFlag = this.projectPath ? 
+        `--project='${this.projectPath.replace(/'/g, "'\\''")}'` : 
+        '';
+      
+      // Construct the full command
+      const command = `${this.juliaPath} ${projectFlag} -e '${escapedCode}'`;
+      
+      console.error(`Executing command: ${command}`);
+      
+      // Execute with explicit environment
+      const { stdout, stderr } = await execAsync(command, {
+        env: {
+          ...process.env,
+          // Ensure JULIA_PROJECT is set in the environment
+          JULIA_PROJECT: this.projectPath || '',
+          // Preserve other important Julia env vars
+          JULIA_DEPOT_PATH: process.env.JULIA_DEPOT_PATH,
+          JULIA_LOAD_PATH: process.env.JULIA_LOAD_PATH,
+          PATH: process.env.PATH,
+        }
+      });
+      
+      console.error('Command output:', stdout, stderr);
       
       if (stderr) {
-        console.error(`Julia stderr output: ${stderr}`);
-        if (stderr.includes("could not load package")) {
-          throw new Error(`Package not found: ${stderr}`);
+        // Run diagnostics when we hit an error to help debug
+        const diagnosticCommand = `${this.juliaPath} ${projectFlag} -e 'println("Active project: ", Base.active_project()); println("DEPOT_PATH: ", DEPOT_PATH); using Pkg; println("Installed packages:"); Pkg.status()'`;
+        console.error('Running diagnostics:', diagnosticCommand);
+        const { stdout: diagnosticOutput } = await execAsync(diagnosticCommand);
+        
+        if (stderr.includes("Package") && stderr.includes("not found in current path")) {
+          throw new Error(
+            `Package ${packageName} not found in the current project environment.\n` +
+            `Environment Info:\n${diagnosticOutput}\n` +
+            `If using a custom project (JULIA_PROJECT), make sure to add the package first:\n` +
+            `julia> using Pkg; Pkg.add("${packageName}")`
+          );
+        } else if (stderr.includes("could not load package")) {
+          throw new Error(`Package not found: ${stderr}\n${diagnosticOutput}`);
         } else if (stderr.includes("not found")) {
-          throw new Error(`Symbol not found: ${stderr}`);
+          throw new Error(`Symbol not found: ${stderr}\n${diagnosticOutput}`);
         } else if (stderr.includes("UndefVarError")) {
-          throw new Error(`Undefined variable: ${stderr}`);
+          throw new Error(`Package not loaded. Try installing the package first.\n${diagnosticOutput}`);
         }
-        throw new Error(stderr);
+        throw new Error(`${stderr}\n${diagnosticOutput}`);
       }
       
       if (!stdout.trim()) {
         throw new Error("No documentation found");
       }
       
-      console.error(`Julia stdout output: ${stdout}`);
       return stdout.trim();
     } catch (error) {
       console.error(`Julia command error:`, error);
@@ -92,95 +214,136 @@ class JuliaDocServer {
   }
 
   private setupTools(): void {
-    // Get documentation with flexible detail levels
+    // Tool 1: Get documentation with flexible detail levels
     this.server.tool(
       "get-doc",
       "Get Julia documentation for a package, module, type, function, or method",
       {
-        path: z.string().describe("Path to Julia object (e.g., 'Base.sort', 'AbstractArray')"),
+        path: z.string().describe("Path to Julia object (e.g., 'Base.sort', 'StatsBase.transform')"),
         detail_level: z.enum(["concise", "full", "all"]).optional()
           .describe("Level of documentation detail: concise (just signatures), full (standard docs), or all (including internals)"),
         include_unexported: z.boolean().optional()
           .describe("Whether to include unexported symbols")
       },
       async ({ path, detail_level = "full", include_unexported = false }) => {
-        console.error(`Received get-doc request for path: ${path}`);
-        const cacheKey = `doc:${path}:${detail_level}:${include_unexported}`;
-        const cached = this.cache.get(cacheKey);
-        if (cached) {
-          console.error(`Returning cached documentation for ${path}`);
-          return {
-            content: [{ type: "text", text: cached }],
-          };
-        }
-
         try {
-          let command = "";
-          switch (detail_level) {
-            case "concise":
+          // Extract package name if it's a qualified path
+          const packageMatch = path.match(/^([A-Za-z][A-Za-z0-9_]*)\./);
+          const packageName = packageMatch ? packageMatch[1] : null;
+          
+          // Skip package loading for Base
+          if (packageName && packageName !== 'Base') {
+            // Build appropriate Julia command based on detail level
+            let command = "";
+            switch (detail_level) {
+              case "concise":
+                command = `
+                  using InteractiveUtils
+                  m = @which ${path}
+                  println("Type signature: ", m.sig)
+                `;
+                break;
+              case "all":
+                command = `
+                  using InteractiveUtils
+                  # Get main documentation
+                  println(@doc ${path})
+                  println("\\n", "-"^40, "\\n")
+                  # Get all methods if it's a function
+                  ms = methods(${path})
+                  if !isempty(ms)
+                    println("Method signatures:")
+                    for m in ms
+                      println(" - ", m.sig)
+                    end
+                  end
+                  # Show internal fields if it's a type
+                  if isa(${path}, Type)
+                    println("\\nFields:")
+                    for field in fieldnames(${path})
+                      println(" - ", field, "::", fieldtype(${path}, field))
+                    end
+                  end
+                `;
+                break;
+              default: // "full"
+                command = `println(@doc ${path})`;
+            }
+
+            // Override command if including unexported symbols
+            if (include_unexported) {
               command = `
                 using InteractiveUtils
-                m = @which ${path}
-                println("Type signature: ", m.sig)
+                names(${path}, all=true) |> 
+                filter(n -> !startswith(string(n), "#")) |>
+                sort |>
+                foreach(n -> println("\\n", "-"^40, "\\n", @doc getfield(${path}, n)))
               `;
-              break;
-            case "all":
-              command = `
-                using InteractiveUtils
-                # Get main documentation
-                println(@doc ${path})
-                println("\\n", "-"^40, "\\n")
-                # Get all methods if it's a function
-                ms = methods(${path})
-                if !isempty(ms)
-                  println("Method signatures:")
-                  for m in ms
-                    println(" - ", m.sig)
-                  end
-                end
-                # Show internal fields if it's a type
-                if isa(${path}, Type)
-                  println("\\nFields:")
-                  for field in fieldnames(${path})
-                    println(" - ", field, "::", fieldtype(${path}, field))
-                  end
-                end
-              `;
-              break;
-            default: // "full"
-              command = `println(@doc ${path})`;
-          }
+            }
 
-          if (include_unexported) {
-            command = `
-              using InteractiveUtils
-              names(${path}, all=true) |> 
-              filter(n -> !startswith(string(n), "#")) |>
-              sort |>
-              foreach(n -> println("\\n", "-"^40, "\\n", @doc getfield(${path}, n)))
-            `;
-          }
-
-          const doc = await this.runJuliaCommand(command);
-          this.cache.set(cacheKey, doc);
-          return {
-            content: [{ type: "text", text: doc }],
-          };
-        } catch (error) {
-          console.error(`Error getting documentation for ${path}:`, error);
-          return {
-            content: [
-              {
+            return {
+              content: [{
                 type: "text",
-                text: error instanceof Error ? error.message : String(error),
-              },
-            ],
+                text: await this.runJuliaCommand(command, packageName)
+              }]
+            };
+          } else {
+            // Same command building logic for Base/non-package objects
+            let command = "";
+            switch (detail_level) {
+              case "concise":
+                command = `
+                  using InteractiveUtils
+                  m = @which ${path}
+                  println("Type signature: ", m.sig)
+                `;
+                break;
+              case "all":
+                command = `
+                  using InteractiveUtils
+                  # Get main documentation
+                  println(@doc ${path})
+                  println("\\n", "-"^40, "\\n")
+                  # Get all methods if it's a function
+                  ms = methods(${path})
+                  if !isempty(ms)
+                    println("Method signatures:")
+                    for m in ms
+                      println(" - ", m.sig)
+                    end
+                  end
+                  # Show internal fields if it's a type
+                  if isa(${path}, Type)
+                    println("\\nFields:")
+                    for field in fieldnames(${path})
+                      println(" - ", field, "::", fieldtype(${path}, field))
+                    end
+                  end
+                `;
+                break;
+              default: // "full"
+                command = `println(@doc ${path})`;
+            }
+
+            return {
+              content: [{
+                type: "text",
+                text: await this.runJuliaCommand(command)
+              }]
+            };
+          }
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: error instanceof Error ? error.message : String(error)
+            }]
           };
         }
-      },
+      }
     );
 
-    // List package contents
+    // Tool 2: List package contents
     this.server.tool(
       "list-package",
       "List available symbols in a Julia package or module",
@@ -192,6 +355,7 @@ class JuliaDocServer {
       async ({ path, include_unexported = false }) => {
         try {
           const command = `
+            using ${path}  # Load the package first
             using InteractiveUtils
             module_obj = ${path}
             names(module_obj, all=${include_unexported}) |>
@@ -216,10 +380,10 @@ class JuliaDocServer {
             ],
           };
         }
-      },
+      }
     );
 
-    // Explore project structure
+    // Tool 3: Explore project structure
     this.server.tool(
       "explore-project",
       "Explore a Julia project's structure and dependencies",
@@ -228,6 +392,7 @@ class JuliaDocServer {
       },
       async ({ path }) => {
         try {
+          // Read and display Project.toml contents
           const command = `
             using Pkg
             project = Pkg.Types.read_project(joinpath("${path}", "Project.toml"))
@@ -256,12 +421,12 @@ class JuliaDocServer {
       },
     );
 
-    // Get source code
+    // Tool 4: Get source code with context
     this.server.tool(
       "get-source",
       "Get Julia source code for a function, type, or method",
       {
-        path: z.string().describe("Path to Julia object (e.g., 'Base.sort', 'AbstractArray')"),
+        path: z.string().describe("Path to Julia object (e.g., 'Base.sort', 'StatsBase.transform')"),
       },
       async ({ path }) => {
         console.error(`Received get-source request for path: ${path}`);
@@ -270,19 +435,21 @@ class JuliaDocServer {
         if (cached) {
           console.error(`Returning cached source for ${path}`);
           return {
-            content: [
-              {
-                type: "text",
-                text: cached,
-              },
-            ],
+            content: [{ type: "text", text: cached }],
           };
         }
 
         try {
-          const source = await this.runJuliaCommand(`
+          // Extract package name if it's a qualified path
+          const packageMatch = path.match(/^([A-Za-z][A-Za-z0-9_]*)\./);
+          const packageName = packageMatch ? packageMatch[1] : null;
+          
+          // Build the command, loading package if needed
+          const command = `
+            ${packageName && packageName !== 'Base' ? `using ${packageName}` : ''}
             using InteractiveUtils
 
+            # Helper function to find where a method definition ends
             function find_method_end(lines, start_line)
               # Get base indentation of the method definition
               base_indent = length(match(r"^\\s*", lines[start_line]).match)
@@ -312,6 +479,7 @@ class JuliaDocServer {
               return length(lines)
             end
 
+            # Function to display method information with context
             function show_method_info(m)
               println("Type signature: ", m.sig)
               println("-" ^ 40)
@@ -355,7 +523,7 @@ class JuliaDocServer {
               println()
             end
 
-            # Get all methods
+            # Get all methods and display their source
             ms = methods(${path})
             if isempty(ms)
               println("No methods found for ${path}")
@@ -367,15 +535,12 @@ class JuliaDocServer {
                 show_method_info(m)
               end
             end
-          `);
+          `;
+          
+          const source = await this.runJuliaCommand(command);
           this.cache.set(cacheKey, source);
           return {
-            content: [
-              {
-                type: "text",
-                text: source,
-              },
-            ],
+            content: [{ type: "text", text: source }],
           };
         } catch (error) {
           console.error(`Error getting source for ${path}:`, error);
@@ -392,23 +557,27 @@ class JuliaDocServer {
     );
   }
 
+  // Start the MCP server
   async start(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error("Julia Documentation MCP Server running on stdio");
   }
 
+  // Clean up resources when shutting down
   cleanup(): void {
-    // Add any cleanup needed
+    // Clear cache
+    this.cache = new Cache<string>(0);
+    // Ensure all pending Julia processes are terminated
     process.exit(0);
   }
 }
 
-// Start server
+// Initialize and start the server
 async function main() {
   const server = new JuliaDocServer();
   
-  // Handle cleanup
+  // Handle shutdown signals
   process.on("SIGINT", () => server.cleanup());
   process.on("SIGTERM", () => server.cleanup());
   
@@ -420,6 +589,7 @@ async function main() {
   }
 }
 
+// Start the server and handle any startup errors
 main().catch((error) => {
   console.error("Fatal error in main():", error);
   process.exit(1);

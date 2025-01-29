@@ -1,7 +1,7 @@
 # Julia Documentation MCP Server 
 ![](https://badge.mcpx.dev?type=server 'MCP Server') 
 
-An MCP server that provides access to Julia documentation and source code through Claude Desktop.
+An MCP server that efficiently serves context to Claude Desktop about Julia documentation and source code.
 
 <a href="https://glama.ai/mcp/servers/7xy80o4wdp"><img width="380" height="200" src="https://glama.ai/mcp/servers/7xy80o4wdp/badge" alt="Julia Documentation Server MCP server" /></a>
 
@@ -37,13 +37,22 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
   "mcpServers": {
     "juliadoc": {
       "command": "npx",
-      "args": ["-y", "@jonathanfischer97/server-juliadoc"]
+      "args": [
+        "-y",
+        "@jonathanfischer97/server-juliadoc"
+      ],
+      "env": {
+        "JULIA_PROJECT": "/path/to/your/julia/project"
+      }
     }
   }
 }
 ```
 
-The server will use your system's default Julia installation and package depot. Make sure Julia is installed and accessible from your `PATH`.
+The server will use:
+- Your specified Julia project if `JULIA_PROJECT` is set in the config
+- The default global Julia environment if no project is specified
+- Your system's default Julia installation (must be accessible in PATH)
 
 ## Development
 
