@@ -398,8 +398,8 @@ class JuliaDocServer {
             project = Pkg.Types.read_project(joinpath("${path}", "Project.toml"))
             println("Project: ", project.name, " v", project.version)
             println("\\nDependencies:")
-            for (dep, ver) in project.dependencies
-              println(" - ", dep, " = ", ver)
+            for (dep, uuid) in project.deps
+              println(" - ", dep, " = ", uuid)
             end
           `;
           
