@@ -1,3 +1,5 @@
+[![MseeP Badge](https://mseep.net/pr/jonathanfischer97-juliadoc-mcp-badge.jpg)](https://mseep.ai/app/jonathanfischer97-juliadoc-mcp)
+
 # Julia Documentation MCP Server 
 ![](https://badge.mcpx.dev?type=server 'MCP Server') 
 
